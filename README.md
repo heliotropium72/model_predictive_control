@@ -1,103 +1,68 @@
-# CarND-Controls-MPC
-Self-Driving Car Engineer Nanodegree Program
+# Model Predictive Control (MPC)
+[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
 
 ---
 
-## Dependencies
+This project builds on the [base code](https://github.com/udacity/CarND-MPC-Project. Details on dependencies and set-up can be found there.
+After cloning the project, it can be compiled and run ttyping below in the command line e.g. bash on Ubunto on Windows
+``` 
+mkdir build && cd build
+cmake .. && make
+./mpc
+```
 
-* cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets) == 0.13, but the master branch will probably work just fine
-  * Follow the instructions in the [uWebSockets README](https://github.com/uWebSockets/uWebSockets/blob/master/README.md) to get setup for your platform. You can download the zip of the appropriate version from the [releases page](https://github.com/uWebSockets/uWebSockets/releases). Here's a link to the [v0.13 zip](https://github.com/uWebSockets/uWebSockets/archive/v0.13.0.zip).
-  * If you have MacOS and have [Homebrew](https://brew.sh/) installed you can just run the ./install-mac.sh script to install this.
-* [Ipopt](https://projects.coin-or.org/Ipopt)
-  * Mac: `brew install ipopt --with-openblas`
-  * Linux
-    * You will need a version of Ipopt 3.12.1 or higher. The version available through `apt-get` is 3.11.x. If you can get that version to work great but if not there's a script `install_ipopt.sh` that will install Ipopt. You just need to download the source from [here](https://www.coin-or.org/download/source/Ipopt/).
-    * Then call `install_ipopt.sh` with the source directory as the first argument, ex: `bash install_ipopt.sh Ipopt-3.12.1`. 
-  * Windows: TODO. If you can use the Linux subsystem and follow the Linux instructions.
-* [CppAD](https://www.coin-or.org/CppAD/)
-  * Mac: `brew install cppad`
-  * Linux `sudo apt-get install cppad` or equivalent.
-  * Windows: TODO. If you can use the Linux subsystem and follow the Linux instructions.
-* Simulator. You can download these from the [releases tab](https://github.com/udacity/CarND-MPC-Project/releases).
+The code is based on a kinematic model of the car's movement. Thereby, the input values from the car are used to predict the best car controls to stay on track.
+
+### Actuator (control vector)
+The car will be controlled using two variables, combined in the actuator 2-Vector: actuator = [delta, a].
+The actuator is the input to the car where delta is the steering angle between -25 and 25 degree and a the acceleration normalized to [-1,1].
+The steering angle delta is positive for right turns and negative for left turns. Note that this is opposite as in the class room.
 
 
+### State and motion model
+The state of the car is described by a 6-Vector: state = [x, y, psi, v, cte, epsi]
 
-## Basic Build Instructions
+| Variable | Description | Motion model (after dt) |
+|:--------:|:-----------:|:------------------------:|
+|x| position | x1 = x + v * cos(psi) * dt |
+|y| position | y1 = y + v * sin(psi) * dt |
+|psi| orientation | psi1 = psi + v * delta/Lf * dt |
+|v| velocity | v1 = v + a * dt |
+|cte = f(x) - y| cross track error : distance to modeled trajectory f(x) | cte1 = cte + v * sin(epsi) * dt |
+|epsi = psi - arctan(f'(x))| difference in orientation | epsi1 = epsi + v * delta/Lf * dt |
 
+The simulator returns x, y, psi and v and a couple of more parameters. [DATA.md](./DATA.md) contains a description of the data sent back from the simulator.
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./mpc`.
+### Trajectory
+The road is modeled by a 3rd-order polynomial f(x) using the center-line-points ptsx and ptsy.
+These points are first transfered in the local coordinate system by the car.
+The coordinate system is rotated and translated such that the origin is in the center of mass of the car and the x-axis is along the car's orientation.
 
-## Tips
+The cte and epsi are calculated relative to this ideal trajectory.
 
-It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
-is the vehicle starting offset of a straight line (reference). If the MPC implementation is correct, after some number of timesteps
-(not too many) it should find and track the reference line.
+### Optimization / Cost function
+The next values for the actuator are found by minimizing the cost function fg(state, actuator)
 
-## Editor Settings
+fg = term_diff + term_actuator + term_change
 
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
+* term_diff: difference to trajectory (cte, psi, v); 3 terms
+* term_actuator: high control values; 3 terms
+* term_change: high changes between two times; 2 terms
 
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
+The weights of each term was tuned until the car run soomthly through the track.
 
-## Code Style
+After normalisation, the actuator values are send to the simulator/car.
 
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
+### Parameterization
+The amount of timesteps N (or total time T = N*dt) and the length of every timestep dt was varied to find the optimal trade-off between computation cost and precision.
+The computation time increases with increasing N and decreasing dt.
 
-## Project Instructions and Rubric
+The selected values for the timesteps are
 
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
+| N | dt |
+|:---:|:---:|
+| 20 | 0.1 |
 
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/12dd29d8-2755-4b1b-8e03-e8f16796bea8)
-for instructions and the project rubric.
-
-## Hints!
-
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
+### Latency
+In the model, a 100 ms latency was introduced which simulates real behaviour better.
+In code this is handled by updating the car's state using the same motion model before the cost funtion is minimised. However note that due to the coordinate transformation, x, y and psi are zero and above equations simplify.
